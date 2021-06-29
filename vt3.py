@@ -23,7 +23,7 @@ class vt_tool():
     def banner(self, clear_screen=True):
         if clear_screen:
             print(chr(27) + "[2J")
-        print(Fore.CYAN,'''[~] VT API v3 Tool [~]\n
+        print(Fore.LIGHTBLUE_EX, '''[~] VT API v3 Tool [~]\n
     [1] (Re-)Enter API Key
     [2] Search for indicator
     [3] Print API Key
@@ -39,7 +39,8 @@ class vt_tool():
 
         if choice == '1':
             self.api_key = None
-            self.check_api_key()
+            self.check_api_key(new_key=True)
+            self.main(print_again=True, clear_screen=False)
 
         elif choice == '2':
             indicator = str(
@@ -85,7 +86,7 @@ class vt_tool():
                 self.api_key = str(api_key)
         elif not self.api_key:
             choice = input(
-                '\t[?] No API key found, would you like to save it in a new file (/.apikey) ? [y/N]')
+                '[?] No API key found, would you like to save it in a new file (/.apikey) ? [y/N]')
             if choice.lower() == 'y':
                 key = input('\t[*] Please enter your API key: ')
                 self.api_key = str(key)
@@ -120,15 +121,46 @@ class vt_tool():
         self.init_vt()
         if indicator_type in ['MD5', 'SHA-1', 'SHA-256']:
             result = self.get_file_report(indicator)
-            self.table_print_file(result)
+            if result:
+                comments = json.loads(self.vt_api_files.get_comments(indicator, 5))
+                self.table_print_file(result, comments)
+            elif result is None:
+                print(chr(27) + "[2J")
+                print(Fore.RED, '[*] Forbidden: Please check your API key.')
+                self.main(print_again=True, clear_screen=False)
+            else:
+                print(chr(27) + "[2J")
+                print(Fore.CYAN, '[*] No results found.')
+                self.main(print_again=True, clear_screen=False)
 
         elif indicator_type == 'IP':
             result = self.get_ip_report(indicator)
-            self.table_print_ip(result)
+            if result:
+                comments = json.loads(self.vt_api_ip_addresses.get_comments(indicator, 5))
+                print(comments)
+                self.table_print_ip(result, comments)
+            elif result is None:
+                print(chr(27) + "[2J")
+                print(Fore.RED, '[*] Forbidden: Please check your API key.')
+                self.main(print_again=True, clear_screen=False)
+            else:
+                print(chr(27) + "[2J")
+                print(Fore.CYAN, '[*] No results found.')
+                self.main(print_again=True, clear_screen=False)
 
         elif indicator_type == 'Domain':
             result = self.get_domain_report(indicator)
-            self.table_print_domain(result)
+            if result:
+                comments = json.loads(self.vt_api_ip_addresses.get_comments(indicator, 5))
+                self.table_print_domain(result, comments)
+            elif result is None:
+                print(chr(27) + "[2J")
+                print(Fore.RED, '[*] Forbidden: Please check your API key.')
+                self.main(print_again=True, clear_screen=False)
+            else:
+                print(chr(27) + "[2J")
+                print(Fore.CYAN, '[*] No results found.')
+                self.main(print_again=True, clear_screen=False)
 
     def get_file_report(self, indicator):
         self.init_vt()
@@ -139,11 +171,11 @@ class vt_tool():
 
         if self.vt_api_files.get_last_http_error() == self.vt_api_files.HTTP_OK:
             result = json.loads(result)
-        else:
-            print(
-                'HTTP Error [' + str(self.vt_api_files.get_last_http_error()) + ']')
-        if result:
             return result
+        elif self.vt_api_files.get_last_http_error() == self.vt_api_files.HTTP_AUTHENTICATION_REQUIRED_ERROR:
+            return None
+        else:
+            return {}
 
     def get_domain_report(self, indicator):
         self.init_vt()
@@ -154,11 +186,14 @@ class vt_tool():
 
         if self.vt_api_domains.get_last_http_error() == self.vt_api_domains.HTTP_OK:
             result = json.loads(result)
-        else:
-            print(
-                'HTTP Error [' + str(self.vt_api_domains.get_last_http_error()) + ']')
-        if result:
             return result
+        elif self.vt_api_domains.get_last_http_error() == self.vt_api_domains.HTTP_AUTHENTICATION_REQUIRED_ERROR:
+            print("ERROR")
+            print(self.vt_api_domains.get_last_http_error())
+            print(result)
+            return None
+        else:
+            return {}
 
     def get_ip_report(self, indicator):
         self.init_vt()
@@ -169,13 +204,14 @@ class vt_tool():
 
         if self.vt_api_ip_addresses.get_last_http_error() == self.vt_api_ip_addresses.HTTP_OK:
             result = json.loads(result)
+            return result
+        elif self.vt_api_ip_addresses.get_last_http_error() == self.vt_api_ip_addresses.HTTP_AUTHENTICATION_REQUIRED_ERROR:
+            return None
         else:
             print(
                 'HTTP Error [' + str(self.vt_api_ip_addresses.get_last_http_error()) + ']')
-        if result:
-            return result
 
-    def table_print_ip(self, results):
+    def table_print_ip(self, results, comments):
         try:
             if not results:
                 return
@@ -208,10 +244,16 @@ class vt_tool():
                 f"\t[+] Country: {results['data']['attributes']['country']}\t[+] AS {results['data']['attributes']['asn']} ({results['data']['attributes']['as_owner']})")
             print(
                 f"\t[+] Reputation: {results['data']['attributes']['reputation']}\n")
+            print("\t[+] Comments")
+
+            for comment in comments['data']:
+                print(f"\t[{datetime.fromtimestamp(comment['attributes']['date'])}]: {comment['attributes']['text']}")
+
+            print('\n')
         except KeyError as e:
             print(e)
 
-    def table_print_domain(self, results):
+    def table_print_domain(self, results, comments):
         try:
             if not results:
                 return
@@ -244,11 +286,16 @@ class vt_tool():
             print(f"\t[*] Categories:")
             for k, v in results['data']['attributes']['categories'].items():
                 print('\t\t', k, ':', v)
+            print("\t[+] Comments")
+
+            for comment in comments['data']:
+                print(f"\t[{datetime.fromtimestamp(comment['attributes']['date'])}]: {comment['attributes']['text']}")
+
             print('\n')
         except KeyError as e:
             print(e)
 
-    def table_print_file(self, results):
+    def table_print_file(self, results, comments):
         try:
             if not results:
                 return
@@ -279,7 +326,13 @@ class vt_tool():
             print(f'\t\n[+] Detected: {detected}/{len(df)}')
             print(
                 f"\t[+] First Submission: {datetime.fromtimestamp(results['data']['attributes']['first_submission_date'])}\tLast Submission: {datetime.fromtimestamp(results['data']['attributes']['last_submission_date'])}")
-            print(f"\t[+] Last Analysis: {datetime.fromtimestamp(results['data']['attributes']['first_submission_date'])}\t\tReputation: {results['data']['attributes']['reputation']}\n\tSuggested Name: {results['data']['attributes']['popular_threat_classification']['suggested_threat_label']}\n")
+            print(f"\t[+] Last Analysis: {datetime.fromtimestamp(results['data']['attributes']['first_submission_date'])}\t\tReputation: {results['data']['attributes']['reputation']}\n\tSuggested Name: {results['data']['attributes']['popular_threat_classification']['suggested_threat_label']}")
+
+            print("\t[+] Comments")
+
+            for comment in comments['data']:
+                print(f"\t[{datetime.fromtimestamp(comment['attributes']['date'])}]: {comment['attributes']['text']}")
+            print('\n')
         except KeyError as e:
             print(e)
 
